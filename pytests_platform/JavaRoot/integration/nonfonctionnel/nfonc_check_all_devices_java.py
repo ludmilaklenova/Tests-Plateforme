@@ -14,7 +14,6 @@ Created on 14/11/2017
 @author: Ludmila Klenov <ludmila.klenov@synchrotron-soleil.fr>
 """
 
-from __future__ import print_function
 import argparse
 import os
 import time

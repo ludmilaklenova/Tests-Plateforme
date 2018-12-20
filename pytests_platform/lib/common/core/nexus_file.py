@@ -40,19 +40,19 @@ class NexusFile(object) :
 		   ::return : True if Nexus file exist and not empty,
 			      	  False, otherwise.
 		"""
-#---------si fichier Nexus n existe pas, erreur
+#---------si le fichier Nexus n'existe pas, erreur
 		if not os.path.isfile(self.nexus_file_name) :
 			self.error_message.set_error_message('FILE_NOT_FOUND',self.nexus_file_name)
 			self.logger.error("NexusFile.check_file : '%s'"%self.error_message.get_error_message())
 			return False
 
-#--------si on peut pas acceder au fichier en lecture,erreur
+#--------si on ne peut pas accéder au fichier Nexus en lecture, erreur
 		if not os.access(self.nexus_file_name, os.R_OK) :
 			self.error_message.set_error_message('FILE_NOT_READABLE',self.nexus_file_name)
 			self.logger.error("NexusFile.check_file : '%s'"%self.error_message.get_error_message())
 			return False
 		
-#--------si le fichier n est pas un hdf5 file,erreur
+#--------si le fichier n'est pas un hdf5 file, erreur
 		f = h5py.File(self.nexus_file_name, 'r')
 		
 		if not self._is_hdf5_file(f):
@@ -61,13 +61,14 @@ class NexusFile(object) :
 			f.close()
 			return False
 		self.logger.info("'%s' is a HDF5 file"%self.nexus_file_name)
+		f.close()
 		return True
 	
 	def get_data(self,data_name):
-		"""get data.
+		"""get data from file.
 		   ::parameter : data_name - full data path
 		   ::return : data, if exist,
-					   None, otherwise
+					  None, otherwise
 		"""
 		try:
 			f = h5py.File(self.nexus_file_name,  "r")
@@ -75,6 +76,7 @@ class NexusFile(object) :
 			self.error_message.set_error_message('FILE_NOT_FOUND',self.nexus_file_name)
 			return None
 		data = self._get_data_from_file(f,data_name)
+		f.close()
 		return data
 
 	def _get_data_from_file(self,nx_file,data_name):
@@ -85,8 +87,9 @@ class NexusFile(object) :
 					   None, otherwise
 		"""
 		try:
+				#------------récuperation des données
 				present   = nx_file[data_name]
-				#--------si la taille des données est 0, données n'exist pas
+				#--------si la taille des données est 0, erreur
 				if present.size == 0 :
 					self.error_message.set_error_message('NEXUS_FILE_DATA_ERROR', present.name)
 					self.logger.error("NexusFile._get_data_from_file : '%s'"%self.error_message.get_error_message())
@@ -108,6 +111,7 @@ class NexusFile(object) :
 			f = h5py.File(self.nexus_file_name,  "r")
 		except Exception, message :
 			self.error_message.set_error_message('FILE_NOT_FOUND',self.nexus_file_name)
+			f.close()
 			return False
 		
 		if not self._is_nexusfile_bynxdata_attrs(f):
@@ -119,6 +123,7 @@ class NexusFile(object) :
 			#vérification que les données sont présent dans le fichier
 		for data in list_data :
 			if not self._get_data_from_file(f,data) :
+				f.close()
 				return False	
 		f.close()
 		self.logger.info("'%s' is a valid Nexus file "%self.nexus_file_name)
@@ -150,10 +155,10 @@ class NexusFile(object) :
     		::parameter : nxclass_name - class name of attribute,
     		::return    : group corresponding to this attribute.
     	"""
-		#recherche group correspondant a attribute
+		#recherche le group correspondant a l'attribute
 		group = parent.attrs.get(attribute, None)
-		#si attribute n est pas a la racine du parent, recherche dans tous les HDF5 group
-		#si il sont leur NX_class attribut decrite comme ``nxclass_name``
+		#si l'attribute n'est pas à la racine du parent, recherche dans tous les HDF5 groups
+		#si il sont leur NX_class attribut décrite comme ``nxclass_name``
 		if group :
 			group = parent[group]
 		else:
@@ -163,26 +168,25 @@ class NexusFile(object) :
 					break
 		return group
 
-	def _is_nexus_group(self,obj, NXtype):
+	def _is_nexus_group(self,obj):
 		"""check if  `obj` a NeXus group.
 			::parameter : obj    - group in the file,
-			::parameter : NXtype - class of the group
 			::return : True, if obj is a Nexus group,
 	   			       False, otherwise.
 		"""
-		
-		nxclass = None
+		is_group = False
+		nxclass  = None
+		#--------vérification si object est une groupe 
 		if self._is_hdf5_group(obj):
 			nxclass = obj.attrs.get('NX_class', None)
 			if isinstance(nxclass, numpy.ndarray):
-				nxclass = nxclass[0]
-		return nxclass == str(NXtype)
+				is_group = True
+				break
+		return is_group
 
 	def _is_nexusfile_bynxdata_attrs(self,file_obj):
 			"""
-    			check if `filename` is a NeXus HDF5 file.
-    .
-    			In short, verify these NeXus classpaths exist::
+    			Verify these NeXus classpaths exist::
     
        			 /@default={entry_group}
        			 /{entry_group}:NXentry/@default={data_group}
@@ -191,21 +195,22 @@ class NexusFile(object) :
 	   			       		False, otherwise.
     		"""
 			try:
-				# find the NXentry group NXentry
+				#---recherche NXentry groupe
 				nxentry = self._get_group(file_obj, 'default', 'NXentry')
-			
+				#---si la groupe n'existe pas, erreur
 				if nxentry is None:
 					return False
-				# find the NXdata group NXdata
+					
+				# recherche NXdata groupe
 				nxdata = self._get_group(nxentry, 'default', 'NXdata')
+				
+				#---si la groupe n'existe pas, erreur
 				if nxdata is None:
 					return False        # no NXdata group identified
 				return True
 			except Exception as _exc:
-				# ignore any Exceptions, they mean that result stays "False"
 				self.error_message.set_error_message('CHECK_NEXUS_FILE_ERROR',str(_exc))
-				self.logger.error("NexusFile.isnexusfile_bynxdata_attrs : '%s'"%self.error_message.get_error_message())
-				pass    
+				self.logger.error("NexusFile.isnexusfile_bynxdata_attrs : '%s'"%self.error_message.get_error_message())  
 				return False
 
 
